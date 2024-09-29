@@ -167,8 +167,7 @@ impl RateLimiter for MergeRateLimiter {
         let mut cur_time = start;
         // loop because:
         // 1) Thread.wait doesn't always sleep long enough
-        // 2) we wake up and check again when our rate limit is
-        //    changed while we were pausing:
+        // 2) we wake up and check again when our rate limit is changed while we were pausing:
         let mut paused = Duration::default();
         loop {
             let result = self.maybe_pause(bytes, cur_time)?;

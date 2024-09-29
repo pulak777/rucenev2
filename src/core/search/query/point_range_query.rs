@@ -320,9 +320,9 @@ pub enum PointValueType {
     Float,
     Double,
     Long,
-    /* Byte,
-     * SmallFloat,
-     * Short */
+    // Byte,
+    // SmallFloat,
+    // Short
 }
 
 impl PointValueType {

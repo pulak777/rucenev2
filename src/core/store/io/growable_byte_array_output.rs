@@ -21,8 +21,8 @@ const MIN_UTF8_SIZE_TO_ENABLE_DOUBLE_PASS_ENCODING: usize = 65536;
 pub struct GrowableByteArrayDataOutput {
     pub bytes: Vec<u8>,
     length: usize,
-    /* scratch for utf8 encoding of small strings
-     * _scratch_bytes: Vec<u8>, */
+    // scratch for utf8 encoding of small strings
+    // _scratch_bytes: Vec<u8>,
 }
 
 impl GrowableByteArrayDataOutput {

@@ -16,7 +16,27 @@ use core::search::NO_MORE_DOCS;
 use core::store::io::IndexInput;
 use core::util::packed::{SIMD128Packer, SIMDPacker};
 use error::Result;
-use std::arch::x86_64 as simd;
+use std::arch::aarch64 as simd;
+
+mod neon {
+    use std::arch::aarch64 as simd;
+
+    pub unsafe fn movemask_epi32_neon(input: simd::int32x4_t) -> i32 {
+        // Shift the MSB of each 32-bit element to the least significant bit position
+        let mask = simd::vshrq_n_s32(input, 31); // Right shift each element by 31 to isolate the MSB
+
+        // Now, the mask contains -1 (0xFFFFFFFF) where the MSB was 1, and 0 where the MSB was 0
+        // We need to extract these bits and combine them into a 4-bit mask
+
+        let bit0 = simd::vgetq_lane_s32(mask, 0) & 0x1;
+        let bit1 = simd::vgetq_lane_s32(mask, 1) & 0x1;
+        let bit2 = simd::vgetq_lane_s32(mask, 2) & 0x1;
+        let bit3 = simd::vgetq_lane_s32(mask, 3) & 0x1;
+
+        // Pack the bits into a single integer
+        (bit0 << 0) | (bit1 << 1) | (bit2 << 2) | (bit3 << 3)
+    }
+}
 
 #[repr(align(128))]
 struct AlignedBuffer([u32; (BLOCK_SIZE + 4) as usize]);
@@ -99,29 +119,25 @@ impl SIMDBlockDecoder {
     #[inline(always)]
     pub fn advance(&mut self, target: i32) -> (i32, usize) {
         unsafe {
-            let input = self.data.0.as_ptr() as *const simd::__m128i;
-            let target = simd::_mm_set1_epi32(target);
-            let mut count = simd::_mm_set1_epi32(0);
+            let input = self.data.0.as_ptr() as *const simd::int32x4_t;
+            let target = simd::vdupq_n_s32(target);
+            let mut count = simd::vdupq_n_s32(0);
             unroll! {
                 for i in 0..8 {
-                    let r1 = simd::_mm_cmplt_epi32(
-                        simd::_mm_load_si128(input.add(i * 4)), target);
-                    let r2 = simd::_mm_cmplt_epi32(
-                        simd::_mm_load_si128(input.add(i * 4 + 1)), target);
-                    let r3 = simd::_mm_cmplt_epi32(
-                        simd::_mm_load_si128(input.add(i * 4 + 2)), target);
-                    let r4 = simd::_mm_cmplt_epi32(
-                        simd::_mm_load_si128(input.add(i * 4 + 3)), target);
-                    let sum = simd::_mm_add_epi32(
-                        simd::_mm_add_epi32(r1, r2),
-                        simd::_mm_add_epi32(r3, r4)
+                    let r1 = simd::vreinterpretq_s32_u32(simd::vcltq_s32(simd::vld1q_s32(input.add(i * 4) as *const i32), target));
+                    let r2 = simd::vreinterpretq_s32_u32(simd::vcltq_s32(simd::vld1q_s32(input.add(i * 4 + 1) as *const i32), target));
+                    let r3 = simd::vreinterpretq_s32_u32(simd::vcltq_s32(simd::vld1q_s32(input.add(i * 4 + 2) as *const i32), target));
+                    let r4 = simd::vreinterpretq_s32_u32(simd::vcltq_s32(simd::vld1q_s32(input.add(i * 4 + 3) as *const i32), target));
+                    let sum = simd::vaddq_s32(
+                        simd::vaddq_s32(r1, r2),
+                        simd::vaddq_s32(r3, r4)
                     );
-                    count = simd::_mm_sub_epi32(count, sum);
+                    count = simd::vsubq_s32(count, sum);
                 }
             };
-            let count = simd::_mm_add_epi32(count, simd::_mm_srli_si128(count, 8));
-            let count = simd::_mm_add_epi32(count, simd::_mm_srli_si128(count, 4));
-            let count = simd::_mm_cvtsi128_si32(count) as usize;
+            let count = simd::vaddq_s32(count, simd::vextq_s32(count, count, 2));
+            let count = simd::vaddq_s32(count, simd::vextq_s32(count, count, 1));
+            let count = simd::vgetq_lane_s32(count, 0) as usize;
             self.next_index = count + 1;
             (self.data.0[count] as i32, count)
         }
@@ -130,12 +146,15 @@ impl SIMDBlockDecoder {
     #[inline(always)]
     pub fn advance_by_partial(&mut self, target: i32) -> (i32, usize) {
         let mut index = self.next_index & 0xFCusize;
-        let mut input = self.data.0[index..].as_ptr() as *const simd::__m128i;
+        let mut input = self.data.0[index..].as_ptr() as *const simd::int32x4_t;
         unsafe {
-            let target = simd::_mm_set1_epi32(target);
+            let target = simd::vdupq_n_s32(target);
             while index < 128 {
-                let res = simd::_mm_cmplt_epi32(simd::_mm_load_si128(input), target);
-                let res = simd::_mm_movemask_epi8(res);
+                let res = simd::vreinterpretq_s32_u32(simd::vcltq_s32(
+                    simd::vld1q_s32(input as *const i32),
+                    target,
+                ));
+                let res = neon::movemask_epi32_neon(res);
                 if res != 0xFFFF {
                     index += ((32 - res.leading_zeros()) >> 2) as usize;
                     break;

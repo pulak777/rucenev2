@@ -16,8 +16,9 @@ use core::util::math;
 use core::util::sorter::{MSBRadixSorter, MSBSorter, Sorter};
 use core::util::BytesRef;
 use core::util::{fill_slice, over_size};
+use std::hash::Hasher;
 
-use fasthash::murmur3;
+use rustc_hash::FxHasher;
 
 use std::cmp::Ordering;
 
@@ -293,8 +294,10 @@ impl BytesRefHash {
         hash_pos
     }
 
-    fn do_hash(&self, bytes: &BytesRef) -> u32 {
-        murmur3::hash32(bytes)
+    fn do_hash(&self, bytes: &BytesRef) -> u64 {
+        let mut fx_hasher: FxHasher = FxHasher::default();
+        fx_hasher.write(bytes.bytes());
+        return fx_hasher.finish();
     }
 
     fn rehash(&mut self, new_size: usize, hash_on_data: bool) {

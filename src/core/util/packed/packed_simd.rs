@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::arch::x86_64 as simd;
+use std::arch::aarch64 as simd;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 pub trait SIMDPacker {
@@ -65,13 +65,13 @@ impl SIMD128Packer {
     }
 
     #[allow(dead_code)]
-    fn print_m128i_as_i32(v: simd::__m128i) {
+    fn print_m128i_as_i32(v: simd::int32x4_t) {
         unsafe {
             let data = vec![
-                simd::_mm_cvtsi128_si32(v),
-                simd::_mm_cvtsi128_si32(simd::_mm_srli_si128(v, 4)),
-                simd::_mm_cvtsi128_si32(simd::_mm_srli_si128(v, 8)),
-                simd::_mm_cvtsi128_si32(simd::_mm_srli_si128(v, 16)),
+                simd::vgetq_lane_s32(v, 0),
+                simd::vgetq_lane_s32(v, 1),
+                simd::vgetq_lane_s32(v, 2),
+                simd::vgetq_lane_s32(v, 3),
             ];
             println!("{:?}", data);
         }
@@ -81,23 +81,23 @@ impl SIMD128Packer {
 macro_rules! pack_bits {
     ($data: expr, $encoded_data: expr, $num: literal $(,$transfer: expr, $obj: expr)?) => {
         unsafe {
-            let mut _input = $data.as_ptr() as *const simd::__m128i;
-            let mut _output = $encoded_data.as_mut_ptr() as *mut simd::__m128i;
-            let mut _buffer = simd::_mm_set1_epi32(0);
+            let mut _input = $data.as_ptr() as *const simd::int32x4_t;
+            let mut _output = $encoded_data.as_mut_ptr() as *mut simd::int32x4_t;
+            let mut _buffer = simd::vdupq_n_s32(0);
             unroll! {
                 for i in 0..32 {
-                    let mut _input_data = simd::_mm_lddqu_si128(_input);
+                    let mut _input_data = simd::vld1q_s32(_input as *const i32);
                     $(_input_data = $transfer($obj, _input_data);)?
                     const inner_pos: i32 = i as i32 * $num % 32;
-                    _buffer = simd::_mm_or_si128(_buffer, simd::_mm_slli_epi32(_input_data, inner_pos));
+                    _buffer = simd::vorrq_s32(_buffer, simd::vshlq_n_s32(_input_data, inner_pos));
                     const new_pos: i32 = inner_pos + $num;
                     if new_pos >= 32 { // buffer is full, store
-                        simd::_mm_storeu_si128(_output, _buffer);
+                        simd::vst1q_s32(_output as *mut i32, _buffer);
                         _output = _output.add(1);
                         _buffer = if new_pos > 32 {
-                            simd::_mm_srli_epi32(_input_data, 32 - inner_pos)
+                            simd::vshrq_n_s32(_input_data, 32 - inner_pos)
                         } else {
-                            simd::_mm_set1_epi32(0)
+                            simd::vdupq_n_s32(0)
                         }
                     }
                     _input = _input.add(1);
@@ -126,10 +126,10 @@ impl AsRawPtr for &[u8] {
 macro_rules! unpack_bits {
     ($encoded_data: expr, $data: expr, $num: literal $(,$transfer: expr, $obj: expr)?) => {
    unsafe {
-            let mut input = $encoded_data.as_ptr() as *const simd::__m128i;
-            let mut _output = $data.as_mut_ptr() as *mut simd::__m128i;
-            let mask = simd::_mm_set1_epi32(((1u32 << $num) - 1) as i32);
-            let mut _buffer = simd::_mm_lddqu_si128(input);
+            let mut input = $encoded_data.as_ptr() as *const simd::int32x4_t;
+            let mut _output = $data.as_mut_ptr() as *mut simd::int32x4_t;
+            let mask = simd::vdupq_n_s32(((1u32 << $num) - 1) as i32);
+            let mut _buffer = simd::vld1q_s32(input as *const i32);
             unroll! {
                 for i in 0..32 {
                     const inner_pos: i32 = i as i32 * $num % 32;
@@ -138,22 +138,22 @@ macro_rules! unpack_bits {
                         input = input.add(1);
                         _buffer = if new_pos == 32 {
                             $(_buffer = $transfer($obj, _buffer);)?
-                            simd::_mm_storeu_si128(_output, _buffer);
-                            simd::_mm_lddqu_si128(input)
+                            simd::vst1q_s32(_output as *mut i32, _buffer);
+                            simd::vld1q_s32(input as *const i32)
                         } else {
                             const remain: i32 = 32 - inner_pos;
-                            let temp = simd::_mm_lddqu_si128(input);
-                            _buffer = simd::_mm_and_si128(simd::_mm_or_si128(
-                                _buffer, simd::_mm_slli_epi32(temp, remain)), mask);
+                            let temp = simd::vld1q_s32(input as *const i32);
+                            _buffer = simd::vandq_s32(simd::vorrq_s32(
+                                _buffer, simd::vshlq_n_s32(temp, remain)), mask);
                             $(_buffer = $transfer($obj, _buffer);)?
-                            simd::_mm_storeu_si128(_output, _buffer);
-                            simd::_mm_srli_epi32(temp, $num - remain)
+                            simd::vst1q_s32(_output as *mut i32, _buffer);
+                            simd::vshrq_n_s32(temp, $num - remain)
                         }
                     } else {
-                        let mut _data = simd::_mm_and_si128(_buffer, mask);
+                        let mut _data = simd::vandq_s32(_buffer, mask);
                         $(_data = $transfer($obj, _data);)?
-                        simd::_mm_storeu_si128(_output, _data);
-                        _buffer = simd::_mm_srli_epi32(_buffer, $num);
+                        simd::vst1q_s32(_output as *mut i32, _data);
+                        _buffer = simd::vshrq_n_s32(_buffer, $num);
                     }
                     _output = _output.add(1);
                 }
@@ -164,7 +164,7 @@ macro_rules! unpack_bits {
 
 impl SIMDPacker for SIMD128Packer {
     const BLOCK_LEN: usize = 128;
-    type DataType = simd::__m128i;
+    type DataType = simd::int32x4_t;
 
     fn pack(data: &[u32], encoded_data: &mut [u8], bits_num: u8) {
         match bits_num {
@@ -345,55 +345,54 @@ impl SIMDPacker for SIMD128Packer {
     }
 
     #[inline(always)]
-    fn trans_to_delta(&mut self, data: simd::__m128i) -> simd::__m128i {
+    fn trans_to_delta(&mut self, data: simd::int32x4_t) -> simd::int32x4_t {
         unsafe {
-            let deltas = simd::_mm_sub_epi32(
+            let deltas = simd::vsubq_s32(
                 data,
-                simd::_mm_or_si128(
-                    simd::_mm_slli_si128(data, 4),
-                    simd::_mm_set_epi32(0, 0, 0, self.delta_base as i32),
+                simd::vorrq_s32(
+                    simd::vextq_s32(simd::vdupq_n_s32(0), data, 4),
+                    simd::vsetq_lane_s32(self.delta_base as i32, simd::vdupq_n_s32(0), 0),
                 ),
             );
 
-            self.delta_base = simd::_mm_cvtsi128_si32(simd::_mm_srli_si128(data, 12)) as u32;
+            self.delta_base = simd::vgetq_lane_s32(data, 12) as u32;
             deltas
         }
     }
 
     #[inline(always)]
-    fn trans_from_delta(&mut self, delta: simd::__m128i) -> simd::__m128i {
+    fn trans_from_delta(&mut self, delta: simd::int32x4_t) -> simd::int32x4_t {
         unsafe {
-            let a_ab_bc_cd = simd::_mm_add_epi32(delta, simd::_mm_slli_si128(delta, 4));
+            let a_ab_bc_cd = simd::vaddq_s32(delta, simd::vextq_s32(delta, delta, 1));
             let a_ab_abc_abcd =
-                simd::_mm_add_epi32(a_ab_bc_cd, simd::_mm_slli_si128(a_ab_bc_cd, 8));
-            let value =
-                simd::_mm_add_epi32(a_ab_abc_abcd, simd::_mm_set1_epi32(self.delta_base as i32));
-            self.delta_base = simd::_mm_cvtsi128_si32(simd::_mm_srli_si128(value, 12)) as u32;
+                simd::vaddq_s32(a_ab_bc_cd, simd::vextq_s32(a_ab_bc_cd, a_ab_bc_cd, 8));
+            let value = simd::vaddq_s32(a_ab_abc_abcd, simd::vdupq_n_s32(self.delta_base as i32));
+            self.delta_base = simd::vgetq_lane_s32(value, 3) as u32;
             value
         }
     }
 
     fn max_bits_num(data: &[u32]) -> u8 {
         unsafe {
-            let mut data_input = data.as_ptr() as *const simd::__m128i;
-            let mut result = simd::_mm_lddqu_si128(data_input);
-            for _ in 1..32 {
-                data_input = data_input.add(1);
-                let data = simd::_mm_lddqu_si128(data_input);
-                result = simd::_mm_or_si128(result, data);
+            let mut data_input = data.as_ptr() as *const simd::int32x4_t;
+            let mut result = simd::vld1q_u32(data_input as *const u32);
+            for _ in 1..8 {
+                data_input = data_input.add(4);
+                let data = simd::vld1q_u32(data_input as *const u32);
+                result = simd::vorrq_u32(result, data);
             }
             // result like a_b_c_d
-            let a_b_c = simd::_mm_srli_si128(result, 4);
-            let a_ab_bc_cd = simd::_mm_or_si128(result, a_b_c);
-            let a_ab = simd::_mm_srli_si128(a_ab_bc_cd, 8);
-            let a_ab_abc_abcd = simd::_mm_or_si128(a_ab_bc_cd, a_ab);
-            32 - simd::_mm_cvtsi128_si32(a_ab_abc_abcd).leading_zeros() as u8
+            let a_b_c = simd::vextq_u32(result, result, 1);
+            let a_ab_bc_cd = simd::vorrq_u32(result, a_b_c);
+            let a_ab = simd::vextq_u32(a_ab_bc_cd, a_ab_bc_cd, 2);
+            let a_ab_abc_abcd = simd::vorrq_u32(a_ab_bc_cd, a_ab);
+            32 - simd::vgetq_lane_u32(a_ab_abc_abcd, 0).leading_zeros() as u8
         }
     }
 
     #[inline(always)]
     fn is_support() -> bool {
-        std::is_x86_feature_detected!("sse3")
+        false
     }
 }
 

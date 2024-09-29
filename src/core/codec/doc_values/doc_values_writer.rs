@@ -869,8 +869,8 @@ impl SortedDocValuesWriter {
             term_id = -term_id - 1;
         } else {
             // reserve additional space for each unique value:
-            // 1. when indexing, when hash is 50% full, rehash() suddenly needs 2*size ints.
-            //    TODO: can this same OOM happen in THPF?
+            // 1. when indexing, when hash is 50% full, rehash() suddenly needs 2*size ints. TODO:
+            //    can this same OOM happen in THPF?
             // 2. when flushing, we need 1 int per value (slot in the ordMap).
         }
 
@@ -1190,8 +1190,8 @@ impl SortedSetDocValuesWriter {
             term_id = -term_id - 1;
         } else {
             // reserve additional space for each unique value:
-            // 1. when indexing, when hash is 50% full, rehash() suddenly needs 2*size ints.
-            //    TODO: can this same OOM happen in THPF?
+            // 1. when indexing, when hash is 50% full, rehash() suddenly needs 2*size ints. TODO:
+            //    can this same OOM happen in THPF?
             // 2. when flushing, we need 1 int per value (slot in the ordMap).
         }
 

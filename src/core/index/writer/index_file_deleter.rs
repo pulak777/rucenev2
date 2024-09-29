@@ -488,9 +488,7 @@ impl<D: Directory> IndexFileDeleter<D> {
 
     fn filter_dv_update_files(&self, candidates: &mut Vec<&String>) {
         let dv_update_files: Vec<String> = candidates
-            .drain_filter(|f| -> bool {
-                self.fnm_pattern.is_match(f) || self.dv_pattern.is_match(f)
-            })
+            .extract_if(|f| -> bool { self.fnm_pattern.is_match(f) || self.dv_pattern.is_match(f) })
             .map(|f| f.clone())
             .collect();
         let to_deletes: Vec<Vec<String>>;
@@ -502,7 +500,7 @@ impl<D: Directory> IndexFileDeleter<D> {
                 .unwrap()
                 .as_secs();
             to_deletes = old_dv_update_files
-                .drain_filter(|(x, _)| -> bool { *x < tm_now })
+                .extract_if(|(x, _)| -> bool { *x < tm_now })
                 .map(|(_, y)| y)
                 .collect();
             old_dv_update_files.push((tm_now + 60, dv_update_files));

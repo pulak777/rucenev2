@@ -16,16 +16,15 @@
 #![cfg_attr(feature = "clippy", plugin(clippy))]
 #![cfg_attr(not(feature = "clippy"), allow(unknown_lints))]
 #![feature(exact_size_is_empty)]
-#![feature(drain_filter)]
+#![feature(extract_if)]
 #![feature(hashmap_internals)]
 #![feature(integer_atomics)]
-#![feature(vec_remove_item)]
 #![feature(specialization)]
 #![allow(clippy::cast_lossless)]
 #![feature(fn_traits)]
 #![feature(maybe_uninit_ref)]
 #![feature(maybe_uninit_extra)]
-#![feature(in_band_lifetimes)]
+// #![feature(in_band_lifetimes)] https://github.com/rust-lang/rust/issues/91867
 #![feature(vec_into_raw_parts)]
 #![feature(core_intrinsics)]
 #![feature(stmt_expr_attributes)]
@@ -48,11 +47,11 @@ extern crate byteorder;
 extern crate bytes;
 extern crate crc;
 extern crate crossbeam;
-extern crate fasthash;
 extern crate flate2;
 extern crate memmap;
 extern crate num_cpus;
 extern crate num_traits;
+extern crate rustc_hash;
 extern crate smallvec;
 extern crate thread_local;
 extern crate unicode_reader;

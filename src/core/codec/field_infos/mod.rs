@@ -324,10 +324,10 @@ pub struct FieldInvertState {
     // we must track these across field instances (multi-valued case)
     pub last_start_offset: i32,
     pub last_position: i32,
-    /*    pub offset_attribute: OffsetAttribute,
-     *    pub pos_incr_attribute: PositionIncrementAttribute,
-     *    pub payload_attribute: PayloadAttribute,
-     *    term_attribute: TermToBytesRefAttribute, */
+    //    pub offset_attribute: OffsetAttribute,
+    //    pub pos_incr_attribute: PositionIncrementAttribute,
+    //    pub payload_attribute: PayloadAttribute,
+    //    term_attribute: TermToBytesRefAttribute,
 }
 
 impl FieldInvertState {
